@@ -31,7 +31,7 @@ check-requirements: ## Check all local development requirements and tool version
 .PHONY: start-local
 start-local: ## Start the full local environment (cluster + ArgoCD + monitoring)
 	@echo "$(CYAN)Starting local environment...$(NC)"
-	@docker-compose -f local/docker-compose.yml up -d
+	@docker compose -f local/docker-compose.yml up -d
 	@echo "$(CYAN)Docker containers started:$(NC)"
 	@docker ps | grep -E "ecommerce-postgres|ecommerce-redis"
 	@echo "$(GREEN)$(CHECK) Local environment ready$(NC)"
