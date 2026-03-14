@@ -29,7 +29,7 @@ check-requirements: ## Check all local development requirements and tool version
 	@./scripts/check-local-requirements.sh
 
 .PHONY: start-local
-start-local: ## Start the full local environment (cluster + ArgoCD + monitoring)
+start-local: ## Start the full local environment (postgres + redis)
 	@echo "$(CYAN)Starting local environment...$(NC)"
 	@docker compose -f local/docker-compose.yml up -d
 	@echo "$(CYAN)Docker containers started:$(NC)"
