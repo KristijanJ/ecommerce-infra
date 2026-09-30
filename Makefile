@@ -29,9 +29,10 @@ check-requirements: ## Check all local development requirements and tool version
 	@./scripts/check-local-requirements.sh
 
 .PHONY: start-local
-start-local: ## Start the full local environment (postgres + redis)
+start-local: ## Start the full local environment (postgres + redis + lgtm)
 	@echo "$(CYAN)Starting local environment...$(NC)"
+	@test -f local/.env || { cp local/.env.example local/.env && echo "$(YELLOW)Created local/.env from .env.example$(NC)"; }
 	@docker compose -f local/docker-compose.yml up -d
 	@echo "$(CYAN)Docker containers started:$(NC)"
-	@docker ps | grep -E "ecommerce-postgres|ecommerce-redis"
+	@docker ps | grep -E "ecommerce-postgres|ecommerce-redis|ecommerce-otel-lgtm"
 	@echo "$(GREEN)$(CHECK) Local environment ready$(NC)"

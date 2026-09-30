@@ -32,8 +32,42 @@ services:
     volumes:
       - redis_data:/data
 
+  lgtm:
+    image: grafana/otel-lgtm:0.34.0
+    container_name: ecommerce-otel-lgtm
+    restart: unless-stopped
+    init: true
+    ports:
+      - "3300:3000"
+      - "3200:3200"
+      - "4040:4040"
+      - "4317:4317"
+      - "4318:4318"
+      - "9090:9090"
+    environment:
+      - CONTAINER_RUNTIME=docker
+      - OTEL_COLLECTOR_DEBUG_EXPORTER=${OTEL_COLLECTOR_DEBUG_EXPORTER:-}
+    env_file:
+      - .env
+    volumes:
+      - lgtm_grafana:/data/grafana
+      - lgtm_prometheus:/data/prometheus
+      - lgtm_loki:/data/loki
+      - lgtm_tempo:/data/tempo
+      - lgtm_pyroscope:/data/pyroscope
+
 volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  lgtm_grafana:
+    driver: local
+  lgtm_prometheus:
+    driver: local
+  lgtm_loki:
+    driver: local
+  lgtm_tempo:
+    driver: local
+  lgtm_pyroscope:
     driver: local
