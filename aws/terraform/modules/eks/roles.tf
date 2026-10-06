@@ -60,24 +60,21 @@ resource "aws_iam_role_policy_attachment" "ebs_csi_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEBSCSIDriverPolicyV2"
 }
 
+# External Secrets Operator IAM Role (EKS Pod Identity)
 resource "aws_iam_role" "external_secrets_role" {
   name = "${var.project_name}-external-secrets-role-${var.environment}"
-  # name_prefix = module.eks.oidc_provider_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Action = "sts:AssumeRoleWithWebIdentity"
         Effect = "Allow"
+        Action = [
+          "sts:AssumeRole",
+          "sts:TagSession"
+        ]
         Principal = {
-          Federated = module.eks.oidc_provider_arn
-        }
-        Condition = {
-          StringEquals = {
-            "${module.eks.oidc_provider}:sub" = "system:serviceaccount:external-secrets:external-secrets"
-            "${module.eks.oidc_provider}:aud" = "sts.amazonaws.com"
-          }
+          "Service" : ["pods.eks.amazonaws.com"]
         }
       }
     ]
@@ -88,10 +85,18 @@ resource "aws_iam_role" "external_secrets_role" {
   }
 }
 
+# Bind the role to the External Secrets service account (namespace external-secrets)
+resource "aws_eks_pod_identity_association" "external_secrets" {
+  cluster_name    = module.eks.cluster_name
+  namespace       = "external-secrets"
+  service_account = "external-secrets"
+  role_arn        = aws_iam_role.external_secrets_role.arn
+}
+
 # IAM policy for accessing secrets
 resource "aws_iam_policy" "external_secrets_policy" {
   name        = "${var.project_name}-external-secrets-policy-${var.environment}"
-  description = "Policy for External Secrets Operator to access AWS SSM Parameter Store"
+  description = "Policy for External Secrets Operator to read AWS SSM Parameter Store and Secrets Manager"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -102,6 +107,17 @@ resource "aws_iam_policy" "external_secrets_policy" {
           "ssm:GetParameter",
           "ssm:GetParameters",
           "ssm:DescribeParameters",
+        ]
+        Resource = ["*"]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:GetResourcePolicy",
+          "secretsmanager:ListSecretVersionIds",
+          "secretsmanager:ListSecrets",
         ]
         Resource = ["*"]
       },
