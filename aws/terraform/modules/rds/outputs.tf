@@ -19,9 +19,14 @@ output "db_instance_username" {
   sensitive   = true
 }
 
-output "db_instance_master_user_secret_arn" {
-  description = "ARN of the Secrets Manager secret that holds the master password"
-  value       = module.db.db_instance_master_user_secret_arn
+output "db_secret_name" {
+  description = "Name of the Secrets Manager secret holding host, port, user, password and database"
+  value       = aws_secretsmanager_secret.db.name
+}
+
+output "db_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the connection details"
+  value       = aws_secretsmanager_secret.db.arn
 }
 
 output "security_group_id" {

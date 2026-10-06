@@ -35,8 +35,10 @@ module "db" {
   username = var.username
   port     = 5432
 
-  # RDS generates the master password and stores it in Secrets Manager
-  manage_master_user_password = true
+  # Terraform generates the password and stores it in its own Secrets Manager secret (see secret.tf)
+  manage_master_user_password = false
+  password_wo                 = random_password.master.result
+  password_wo_version         = 1
 
   vpc_security_group_ids = [aws_security_group.rds.id]
   publicly_accessible    = false
