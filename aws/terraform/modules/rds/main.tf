@@ -1,3 +1,12 @@
+terraform {
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.9"
+    }
+  }
+}
+
 # Allow the EKS nodes (and the pods running on them) to reach Postgres
 resource "aws_security_group" "rds" {
   name        = "${var.project_name}-rds-${var.environment}"
