@@ -36,3 +36,14 @@ module "eks" {
   worker_node_min_size     = "2"
   eks_instance_types       = ["t3.medium"]
 }
+
+module "rds" {
+  source = "../../modules/rds"
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  vpc_id                     = module.networking.vpc_id
+  database_subnet_group_name = module.networking.database_subnet_group_name
+  node_security_group_id     = module.eks.node_security_group_id
+}
