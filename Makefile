@@ -80,6 +80,12 @@ aws-tf-apply: ## Run terraform apply for an AWS environment (dev, prod)
 	echo "$(CYAN)Applying $(GREEN)$$ENV$(NC)"; \
 	terraform -chdir=$(AWS_TF_DIR) apply
 
+.PHONY: aws-tf-destroy
+aws-tf-destroy: ## Run terraform destroy for an AWS environment (dev, prod), run make teardown-aws-prod in the gitops repo first
+	@$(AWS_READ_ENV) \
+	echo "$(YELLOW)Destroying $(GREEN)$$ENV$(NC)$(YELLOW). Did you run 'make teardown-aws-prod' in the gitops repo first?$(NC)"; \
+	terraform -chdir=$(AWS_TF_DIR) destroy
+
 .PHONY: aws-tf-fmt
 aws-tf-fmt: ## Run terraform fmt on all AWS environments and modules
 	@echo "$(CYAN)Formatting aws/terraform (environments and modules)$(NC)"; \
