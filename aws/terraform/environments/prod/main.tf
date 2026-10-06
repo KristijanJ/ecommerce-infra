@@ -30,10 +30,10 @@ module "eks" {
   vpc_id     = module.networking.vpc_id
   subnet_ids = module.networking.public_subnets
 
-  worker_node_desired_size = "2"
+  worker_node_desired_size = "3"
   worker_node_disk_size    = "20"
   worker_node_max_size     = "3"
-  worker_node_min_size     = "2"
+  worker_node_min_size     = "3"
   eks_instance_types       = ["t3.medium"]
 }
 
