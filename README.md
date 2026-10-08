@@ -1,134 +1,162 @@
 # ecommerce-infra
 
-Docker Compose infrastructure for the ecommerce shop. It runs outside the Kubernetes cluster.
+Infrastructure for the ecommerce shop that lives outside the Kubernetes manifests:
 
-- PostgreSQL and Redis run the same way in every environment: Docker Compose locally (`local/`) and on a separate VM in Proxmox (`proxmox/`).
-- LGTM observability (`grafana/otel-lgtm`) is local only. The Proxmox k3s cluster runs a different stack, deployed with Helm and ArgoCD from the gitops repo (see [Observability by environment](#observability-by-environment)).
+- `aws/` is the Terraform for the EKS cluster, VPC, RDS and the secrets in AWS Secrets Manager.
+- `proxmox/` is the Docker Compose file and Ansible playbook for the services VM that runs PostgreSQL and Redis for the homelab cluster.
+- `local/` is Docker Compose for local development: PostgreSQL, Redis and an all-in-one Grafana LGTM stack.
 
 Part of a multi-repo project:
 
-| Repo                                                                         | Purpose                                                             |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| [ecommerce-infra](https://github.com/KristijanJ/ecommerce-infra)             | This repo. Docker Compose for PostgreSQL and Redis, plus local LGTM |
-| [ecommerce-shop-gitops](https://github.com/KristijanJ/ecommerce-shop-gitops) | Kubernetes manifests, ArgoCD, platform tooling                      |
-| [ecommerce-shop-be](https://github.com/KristijanJ/ecommerce-shop-be)         | Express.js REST API                                                 |
-| [ecommerce-shop-fe](https://github.com/KristijanJ/ecommerce-shop-fe)         | Next.js frontend                                                    |
+| Repo                                                                         | Purpose                                                  |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------- |
+| [ecommerce-infra](https://github.com/KristijanJ/ecommerce-infra)             | This repo. Terraform for AWS, Docker Compose and Ansible |
+| [ecommerce-shop-gitops](https://github.com/KristijanJ/ecommerce-shop-gitops) | Kubernetes manifests, ArgoCD, platform tooling           |
+| [ecommerce-shop-be](https://github.com/KristijanJ/ecommerce-shop-be)         | NestJS REST API                                          |
+| [ecommerce-shop-fe](https://github.com/KristijanJ/ecommerce-shop-fe)         | Next.js frontend                                         |
 
 ---
 
-## Why Docker, not Kubernetes?
+## Where the stateful services run
 
-Stateful services (databases, caches) are intentionally kept out of Kubernetes, both locally and in production.
+| Service    | Local          | Homelab (Proxmox)                 | AWS (aws-prod)                                   |
+| ---------- | -------------- | --------------------------------- | ------------------------------------------------ |
+| PostgreSQL | Docker Compose | Docker Compose on the services VM | RDS, created by Terraform                        |
+| Redis      | Docker Compose | Docker Compose on the services VM | A Deployment in the cluster, without persistence |
 
-In production on AWS, PostgreSQL runs on RDS and Redis runs on ElastiCache. Both are managed services outside the EKS cluster. Running them in Docker locally mirrors that separation. If they were in the KinD cluster, the local setup would diverge from production and need StatefulSets, PersistentVolumes, and backup strategies that AWS manages for you.
-
-| Service    | Local          | AWS (prod)  |
-| ---------- | -------------- | ----------- |
-| PostgreSQL | Docker Compose | RDS         |
-| Redis      | Docker Compose | ElastiCache |
-
-Swapping from local to AWS means changing a connection string. Nothing in the application code or k8s manifests changes.
+PostgreSQL stays outside Kubernetes in every environment. On AWS the frontend's Redis runs in the cluster, because it only holds shopping carts and losing them on a restart is acceptable. That manifest is in the gitops repo (`apps/frontend/envs/aws-prod/redis.yaml`).
 
 ---
 
-## Services
+## Repository layout
 
-### Stateful services (all environments)
-
-#### PostgreSQL
-
-- Image: `postgres:18.1`
-- Port: `5432`
-- Default credentials: `postgres / postgres`
-- Database: `ecommerce`
-- Data persisted to a named Docker volume (`postgres_data`)
-- Health check: `pg_isready`
-
-#### Redis
-
-- Image: `redis:7.4`
-- Port: `6379`
-- No auth (local only)
-- Data persisted to a named Docker volume (`redis_data`)
-- Health check: `redis-cli ping`
-
-### Observability by environment
-
-| Environment            | Stack                                                             | Where it's defined                              |
-| ---------------------- | ----------------------------------------------------------------- | ----------------------------------------------- |
-| Local (Docker Compose) | LGTM: Grafana, Loki, Tempo, Prometheus, Pyroscope, OTel Collector | `local/docker-compose.yml` (this repo)          |
-| Proxmox k3s            | PLG: kube-prometheus-stack (Prometheus + Grafana), Loki, Promtail | Helm charts via ArgoCD, `ecommerce-shop-gitops` |
-
-The two stacks are not equivalent. The local stack adds Tempo (traces), Pyroscope (profiles) and an OTLP endpoint, which the homelab stack lacks. Both have logs and metrics, collected differently: apps push OTLP locally, and Promtail scrapes pod logs on k3s. Something visible in local Grafana may not exist on the cluster, and the reverse.
-
-### LGTM (local only)
-
-All-in-one observability backend for local development, based on [`grafana/otel-lgtm`](https://github.com/grafana/docker-otel-lgtm). The Proxmox setup doesn't include it. `proxmox/docker-compose.yml` runs only PostgreSQL and Redis.
-
-- Image: `grafana/otel-lgtm:0.34.0`
-- Ports:
-
-| Host   | Container | What                            |
-| ------ | --------- | ------------------------------- |
-| `3300` | `3000`    | Grafana UI (`admin` / `admin`)  |
-| `3200` | `3200`    | Tempo                           |
-| `4040` | `4040`    | Pyroscope                       |
-| `4317` | `4317`    | OTLP gRPC (send telemetry here) |
-| `4318` | `4318`    | OTLP HTTP (send telemetry here) |
-| `9090` | `9090`    | Prometheus                      |
-
-- Grafana is published on host port `3300` instead of the default `3000` to avoid clashing with other local tools
-- Data persisted to named Docker volumes, one per component, so a single store can be reset on its own: `lgtm_grafana`, `lgtm_prometheus`, `lgtm_loki`, `lgtm_tempo`, `lgtm_pyroscope`
-- Runs with `init: true` (the image supervises several processes in one container)
-- Optional settings such as `OTEL_COLLECTOR_DEBUG_EXPORTER` go in `local/.env`, which `make start-local` creates
-
----
-
-## Quick start
-
-```bash
-make start-local    # start PostgreSQL, Redis and LGTM (local only) in the background
+```text
+aws/
+├── README.md                     how to run the Terraform
+└── terraform/
+    ├── environments/prod/        root module, backend, providers, variables
+    └── modules/
+        ├── networking/           VPC with public, private and database subnets
+        ├── eks/                  EKS cluster, node group, add-ons, IAM roles, Load Balancer Controller
+        └── rds/                  RDS PostgreSQL, security group, connection secret
+local/                            Docker Compose: PostgreSQL, Redis, LGTM
+proxmox/
+├── docker-compose.yml            PostgreSQL and Redis for the services VM
+└── ansible/                      installs Docker on the VM and starts the compose file
+scripts/check-local-requirements.sh
+Makefile
 ```
 
-`make start-local` creates `local/.env` from `local/.env.example` if it doesn't exist yet. `.env` is gitignored, so edit it freely. Put new variables and their defaults in `.env.example`.
+---
+
+## Local development
 
 ```bash
-make check-requirements    # verify Docker is installed and running
+make check-requirements   # check that Docker is installed and running
+make start-local          # start PostgreSQL, Redis and LGTM in the background
 ```
 
-To stop:
+`make start-local` creates `local/.env` from `local/.env.example` if it does not exist. `.env` is gitignored. Add new variables and their defaults to `.env.example`.
+
+Stop the stack:
 
 ```bash
 docker compose -f local/docker-compose.yml down
 ```
 
-To wipe data volumes (Postgres, Redis and all LGTM data):
+Remove the data volumes too (PostgreSQL, Redis and all LGTM data):
 
 ```bash
 docker compose -f local/docker-compose.yml down -v
 ```
 
-To reset a single LGTM store, stop the stack and remove just that volume, e.g. `docker volume rm local_lgtm_loki` (volumes are prefixed with the Compose project name, `local`).
+To reset one LGTM store, stop the stack and remove that volume. Volumes carry the Compose project name `local` as a prefix, for example `docker volume rm local_lgtm_loki`.
 
----
+### PostgreSQL
 
-## Connecting
+- Image `postgres:18.1`, port `5432`
+- User and password `postgres` / `postgres`, database `ecommerce`
+- Data in the named volume `postgres_data`
+- Health check with `pg_isready`
 
-PostgreSQL and Redis are exposed on `localhost` and on `host.docker.internal` (reachable from inside the KinD cluster):
+### Redis
 
-| Service    | localhost        | From KinD cluster           |
+- Image `redis:7.4`, port `6379`, no authentication
+- Data in the named volume `redis_data`
+- Health check with `redis-cli ping`
+
+### LGTM
+
+`grafana/otel-lgtm:0.34.0` bundles Grafana, Loki, Tempo, Prometheus, Pyroscope and an OpenTelemetry Collector in one container. It is only part of the local stack. The Proxmox compose file runs just PostgreSQL and Redis.
+
+| Host port | Container port | What                           |
+| --------- | -------------- | ------------------------------ |
+| `3300`    | `3000`         | Grafana UI (`admin` / `admin`) |
+| `3200`    | `3200`         | Tempo                          |
+| `4040`    | `4040`         | Pyroscope                      |
+| `4317`    | `4317`         | OTLP gRPC, send telemetry here |
+| `4318`    | `4318`         | OTLP HTTP, send telemetry here |
+| `9090`    | `9090`         | Prometheus                     |
+
+Grafana is published on `3300` so it does not clash with other tools on `3000`. Each component has its own volume (`lgtm_grafana`, `lgtm_prometheus`, `lgtm_loki`, `lgtm_tempo`, `lgtm_pyroscope`). The container runs with `init: true` because the image starts several processes.
+
+### Connecting
+
+The databases and the OTLP endpoints listen on `localhost`. A kind cluster reaches them through `host.docker.internal`:
+
+| Service    | From the host    | From a kind cluster         |
 | ---------- | ---------------- | --------------------------- |
 | PostgreSQL | `localhost:5432` | `host.docker.internal:5432` |
 | Redis      | `localhost:6379` | `host.docker.internal:6379` |
+| OTLP gRPC  | `localhost:4317` | `host.docker.internal:4317` |
+| OTLP HTTP  | `localhost:4318` | `host.docker.internal:4318` |
+| Grafana    | `localhost:3300` | browser only                |
 
-The backend connects to PostgreSQL and the frontend connects to Redis using the `host.docker.internal` hostname, which is set via environment variables managed by [Vault + ESO](https://github.com/KristijanJ/ecommerce-shop-gitops).
+In the clusters the apps read these settings from Kubernetes Secrets, which External Secrets fills from Vault or Secrets Manager (see the [gitops repo](https://github.com/KristijanJ/ecommerce-shop-gitops)).
 
-The local LGTM stack is also exposed:
+---
 
-| Service      | localhost        | From KinD cluster           |
-| ------------ | ---------------- | --------------------------- |
-| OTLP gRPC    | `localhost:4317` | `host.docker.internal:4317` |
-| OTLP HTTP    | `localhost:4318` | `host.docker.internal:4318` |
-| Grafana (UI) | `localhost:3300` | (browser only)              |
+## Proxmox services VM
 
-On the Proxmox cluster, Grafana comes from kube-prometheus-stack instead (`make grafana-ui` in the gitops repo).
+The homelab cluster uses a separate VM (`192.168.0.30`) for PostgreSQL and Redis. `proxmox/docker-compose.yml` defines the same two services as the local file, without LGTM.
+
+The Ansible playbook `proxmox/ansible/setup_playbook.yml` installs Docker on the VM, adds the `ubuntu` user to the `docker` group, copies the compose file to `/opt/ecommerce-infra` and starts it. The inventory is `proxmox/ansible/inventory.yaml`.
+
+```bash
+cd proxmox/ansible
+ansible-playbook -i inventory.yaml setup_playbook.yml
+```
+
+---
+
+## AWS
+
+`aws/terraform/environments/prod` creates the aws-prod environment. The cluster is destroyed after each working session to save money, so apply and destroy are part of the normal routine. See [aws/README.md](aws/README.md) for the full steps.
+
+```bash
+make aws-tf-init        # once per checkout
+make aws-tf-plan
+make aws-tf-apply
+# then in the gitops repo: make start-aws-prod
+```
+
+To tear it down, run `make teardown-aws-prod` in the gitops repo first, then `make aws-tf-destroy` here.
+
+---
+
+## Makefile reference
+
+`make help` prints the full list.
+
+| Target               | What it does                                            |
+| -------------------- | ------------------------------------------------------- |
+| `check-requirements` | Checks the local tools                                  |
+| `start-local`        | Starts the local Docker Compose stack                   |
+| `aws-tf-init`        | Initializes Terraform for an environment                |
+| `aws-tf-plan`        | Runs `terraform plan`                                   |
+| `aws-tf-apply`       | Runs `terraform apply`                                  |
+| `aws-tf-destroy`     | Runs `terraform destroy`. Run the gitops teardown first |
+| `aws-tf-fmt`         | Runs `terraform fmt -recursive` on `aws/terraform`      |
+| `aws-tf-validate`    | Runs `terraform validate` for an environment            |
+
+The `aws-tf-*` targets ask for the environment name and, for `init`, the SSO profile.
