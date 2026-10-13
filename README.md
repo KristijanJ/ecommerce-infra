@@ -120,6 +120,8 @@ In the clusters the apps read these settings from Kubernetes Secrets, which Exte
 
 The homelab cluster uses a separate VM (`192.168.0.30`) for PostgreSQL and Redis. `proxmox/docker-compose.yml` defines the same two services as the local file, without LGTM.
 
+The PostgreSQL server holds two databases for the cluster: `ecommerce` for the backend and `keycloak` for Keycloak. A Job in the gitops repo creates the `keycloak` role and database, so nothing in this repo has to.
+
 The Ansible playbook `proxmox/ansible/setup_playbook.yml` installs Docker on the VM, adds the `ubuntu` user to the `docker` group, copies the compose file to `/opt/ecommerce-infra` and starts it. The inventory is `proxmox/ansible/inventory.yaml`.
 
 ```bash
